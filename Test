@@ -1,0 +1,156 @@
+import tkinter as tk
+from tkinter import messagebox
+from PIL import ImageTk, Image
+from captcha.image import ImageCaptcha
+import random
+import pyodbc
+
+attempts = 0  # счетчик попыток авторизации
+captcha_text = ""  # текст капчи
+
+def login():
+    conn = pyodbc.connect('Driver={SQL Server};'
+                          'Server=SAICHI-SAMA\SQLEXPRESS;'
+                          'Database=Users;'
+                          'Trusted_Connection=yes;')
+    cursor = conn.cursor()
+    global attempts
+    username = entry_username.get()
+    password = entry_password.get()
+    captcha = entry_captcha.get()
+
+    # Проверка правильности введенных данных
+    query = f"SELECT * FROM Users WHERE Username='{login}' AND Password='{password}'"
+    cursor.execute(query)
+    row = cursor.fetchone()
+
+    if row and captcha == captcha_text:
+        messagebox.showinfo("Успешная авторизация", "Добро пожаловать, админ!")
+        attempts = 0  # сбросить счетчик попыток при успешной авторизации
+
+        # Загрузка информации из базы данных
+        user_info = row
+        open_user_window(username, user_info, login, password)
+
+        root.withdraw()  # скрыть окно авторизации
+    else:
+        attempts += 1
+        if attempts % 3 == 0:
+            messagebox.showinfo("Капча", "Пожалуйста, введите капчу")
+            show_captcha()
+
+        if attempts >= 5:
+            messagebox.showinfo("Блокировка", "Слишком много попыток. Пожалуйста, подождите 10 секунд.")
+            button_login.config(state="disabled")  # блокировка кнопки входа
+            root.after(10000, unlock_login_button)  # разблокировка кнопки через 10 секунд
+            attempts = 0  # сбросить счетчик попыток после блокировки
+
+    cursor.close()
+    conn.close()
+
+
+def show_captcha():
+    global captcha_text
+
+    captcha_text = generate_captcha()
+
+    # Создание изображения капчи
+    image = ImageCaptcha()
+    captcha_image = image.generate(captcha_text)
+    captcha_image_path = "captcha.png"
+    image.write(captcha_text, captcha_image_path)
+
+    # Открываем изображение капчи
+    captcha_image = Image.open(captcha_image_path)
+    captcha_image = captcha_image.resize((200, 100), Image.ANTIALIAS)
+    captcha_photo = ImageTk.PhotoImage(captcha_image)
+
+    # Создаем и размещаем виджет Label для отображения изображения капчи
+    label_captcha_image.config(image=captcha_photo)
+    label_captcha_image.image = captcha_photo
+    label_captcha_image.pack()
+
+    # Создаем Entry для ввода капчи
+    entry_captcha.pack()
+
+    # Создаем кнопку "Переделать капчу"
+    button_regenerate_captcha.pack()
+
+    # Создаем кнопку "Проверить"
+    button_check.pack()
+
+
+def unlock_login_button():
+    button_login.config(state="normal")  # разблокировка кнопки входа
+
+
+def generate_captcha():
+    # Генерация случайной капчи
+    characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+    captcha = ""
+    for _ in range(6):
+        captcha += random.choice(characters)
+    return captcha
+
+
+def regenerate_captcha():
+    global captcha_text
+    captcha_text = generate_captcha()
+    show_captcha()
+    entry_captcha.delete(0, tk.END)
+
+
+def check_captcha():
+    captcha = entry_captcha.get()
+    if captcha == captcha_text:
+        messagebox.showinfo("Капча", "Капча верна!")
+    else:
+        messagebox.showinfo("Капча", "Капча неверна!")
+
+
+def get_user_info(username):
+    # Подключение к базе данных и выполнение запроса
+    conn_str = 'Driver={SQL Server};Server=SAICHI-SAMA\SQLEXPRESS;Database=Users;Trusted_Connection=yes;'
+    conn = pyodbc.connect(conn_str)
+    cursor = conn.cursor()
+
+    query = f"SELECT * FROM Users WHERE Username='{username}'"
+    cursor.execute(query)
+    row = cursor.fetchone()
+
+    # Закрытие соединения с базой данных
+    cursor.close()
+    conn.close()
+
+    return row
+
+
+
+# Создание главного окна
+root = tk.Tk()
+root.title("Авторизация")
+root.geometry('300x300')
+
+# Создание и размещение элементов интерфейса
+label_username = tk.Label(root, text="Имя пользователя:")
+label_username.pack()
+entry_username = tk.Entry(root)
+entry_username.pack()
+
+label_password = tk.Label(root, text="Пароль:")
+label_password.pack()
+entry_password = tk.Entry(root, show="*")
+entry_password.pack()
+
+button_login = tk.Button(root, text="Войти", command=login)
+button_login.pack()
+
+label_captcha_image = tk.Label(root)
+entry_captcha = tk.Entry(root)
+
+button_regenerate_captcha = tk.Button(root, text="Переделать капчу", command=regenerate_captcha)
+
+button_check = tk.Button(root, text="Проверить", command=check_captcha)
+
+# Запуск главного цикла обработки событий
+root.mainloop()
